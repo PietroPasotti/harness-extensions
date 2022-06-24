@@ -1,0 +1,5 @@
+name: $CHARM_NAME  # $ TEMPLATE: Filled in by ./scripts/init.sh
+description: |  
+  Library charm for: $LIB_NAME
+summary: |
+  Library charm for: $LIB_NAME
