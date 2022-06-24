@@ -1,6 +1,6 @@
 # add here your unittests
 import pytest as pytest
-from ops.charm import CharmBase, RelationEvent, ConfigChangedEvent
+from ops.charm import CharmBase, ConfigChangedEvent, RelationEvent
 from ops.testing import Harness
 
 from capture_events import capture_events
