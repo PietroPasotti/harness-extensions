@@ -41,7 +41,7 @@ def test_many_events_emitted(harness: Harness):
 
 # How to update
 
-All subsequent times, if you want to publish a new revision, you can run `scripts/update.sh`.
+When you contribute to this repo, before your changes get merged to main (but when they are final already), you can run `scripts/update.sh`.
 This will 
  - Bump the revision
  - Inline the lib
