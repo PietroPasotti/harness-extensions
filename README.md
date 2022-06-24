@@ -2,7 +2,7 @@
 
 This is a library providing a utility for unittesting events fired on a Harness-ed Charm.
 Good when: 
- - you want to verify that a specific event has been fired on the charm as a response to <something>
+ - you want to verify that a specific event has been fired on the charm as a response to *something*
  - you want to verify that a specific sequence of events have been fired.
  - you want to unittest the interface exposed by some (custom) event.
 
