@@ -1,25 +1,45 @@
-# how to use this template
+# What this is
 
-Cd to the template root dir.
+This is a library providing a utility for unittesting events fired on a Harness-ed Charm.
+Good when: 
+ - you want to verify that a specific event has been fired on the charm as a response to <something>
+ - you want to verify that a specific sequence of events have been fired.
+ - you want to unittest the interface exposed by some (custom) event.
 
-- run `scripts/init.sh <CHARM_NAME> <LIB_NAME> [<LIB_VERSION>]`
+# How to get
 
-This will 
- - Register a charm with name LIB_NAME
- - Initialize a library called LIB_NAME (with version LIB_VERSION or v0 if not provided)
-   - Grab the LIBID
-   - Use LIBID and the other variables to populate: 
-     - `metadata.yaml`
-     - `tox.ini`
-     - `lib_template.jinja`
-     - `scripts/init.sh`
-     - `scripts/inline-lib.py`
-     - `scripts/publish.sh`
-   - Create `./<LIB_NAME>.py`
+`charmcraft fetch-lib charms.harness_extensions.v0.capture_events`
 
-After that, you should put your lib code in `./<LIB_NAME>.py`
-When you're ready to publish the lib for the first time, 
-you should run `scripts/inline-lib.py && scripts/publish.sh`
+# How to use
+
+```python
+from charms.harness_extensions.v0.capture_events import capture, capture_events
+from charm import MyCustomEvent, OtherCustomEvent
+from ops.charm import RelationEvent, ConfigChangedEvent
+from ops.testing import Harness
+
+
+def test_relation_event_emitted(harness: Harness):
+    with capture(harness.charm, RelationEvent) as captured:
+        harness.add_relation('foo', 'remote')
+    assert captured.event.unit.name == 'remote'
+
+    
+def test_many_events_emitted(harness: Harness):
+    id = harness.add_relation('foo', 'remote')
+
+    with capture_events(harness.charm, RelationEvent, MyCustomEvent, OtherCustomEvent, ConfigChangedEvent) as captured:
+        harness.remove_relation(id)
+        
+    assert len(captured) == 5
+    broken, departed, custom1, custom2, config = captured
+    assert broken.relation.name == 'foo'
+    assert departed.relation.name == 'foo'
+    assert custom1.foo == 'bar'
+    assert isinstance(config, ConfigChangedEvent)
+```
+
+# How to update
 
 All subsequent times, if you want to publish a new revision, you can run `scripts/update.sh`.
 This will 
