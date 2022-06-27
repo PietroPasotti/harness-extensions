@@ -27,7 +27,7 @@ JUJU_INFO = {
     "bind-address": "1.1.1.1",
     "egress-subnets": ["1.1.1.2/32"],
     "ingress-addresses": ["1.1.1.2"],
-}
+}  # type: _Network
 
 _Address = TypedDict("_Address", {"hostname": str, "value": str, "cidr": str})
 _BindAddress = TypedDict(
@@ -55,11 +55,12 @@ def apply_harness_patch(juju_info_network: "_Network" = JUJU_INFO):
     global PATCH_ACTIVE, _NETWORKS
     if PATCH_ACTIVE:
         raise NetworkingError("patch already active")
+    assert not _NETWORKS  # type guard
 
     from ops.testing import _TestingModelBackend
 
     _NETWORKS = defaultdict(dict)
-    _TestingModelBackend.network_get = _network_get
+    _TestingModelBackend.network_get = _network_get  # type: ignore
     _NETWORKS["juju-info"][None] = juju_info_network
 
     PATCH_ACTIVE = True
@@ -71,16 +72,17 @@ def retract_harness_patch():
     assert PATCH_ACTIVE, "patch not active"
 
     PATCH_ACTIVE = False
-    _NETWORKS = None
+    _NETWORKS = None  # type: ignore
 
 
-_NETWORKS = None  # type: Dict[str, Dict[Optional[int], _Network]]
+_NETWORKS = None  # type: Optional[Dict[str, Dict[Optional[int], _Network]]]
 PATCH_ACTIVE = False
 
 
 def _network_get(_, endpoint_name, relation_id=None) -> _Network:
     if not PATCH_ACTIVE:
         raise NotImplementedError("network-get")
+    assert _NETWORKS  # type guard
 
     try:
         endpoints = _NETWORKS[endpoint_name]
@@ -111,6 +113,12 @@ def add_network(
     - `make_default`: Make this the default network for the endpoint.
        Equivalent to calling this again with `relation_id==None`.
     """
+    if not PATCH_ACTIVE:
+        raise NetworkingError(
+            "module not initialized; " "run apply_harness_patch() first."
+        )
+    assert _NETWORKS  # type guard
+
     if _NETWORKS[endpoint_name].get(relation_id):
         log.warning(
             f"Endpoint {endpoint_name} is already bound "
@@ -127,6 +135,12 @@ def add_network(
 
 def remove_network(endpoint_name: str, relation_id: Optional[int]):
     """Remove a network from the harness."""
+    if not PATCH_ACTIVE:
+        raise NetworkingError(
+            "module not initialized; " "run apply_harness_patch() first."
+        )
+    assert _NETWORKS  # type guard
+
     _NETWORKS[endpoint_name].pop(relation_id)
     if not _NETWORKS[endpoint_name]:
         del _NETWORKS[endpoint_name]
@@ -164,7 +178,7 @@ _not_given = object()  # None is meaningful, but JUJU_INFO is mutable
 
 @contextmanager
 def networking(
-    juju_info_network: Optional[_Network] = _not_given,
+    juju_info_network: Optional[_Network] = _not_given,  # type: ignore
     networks: Optional[Dict[Union[str, Relation], _Network]] = None,
     make_default: bool = False,
 ):
@@ -203,14 +217,16 @@ def networking(
     if juju_info_network is _not_given:
         juju_info_network = JUJU_INFO
 
-    networks = networks or {}
     if not PATCH_ACTIVE:
         patch_was_inactive = True
-        apply_harness_patch(juju_info_network)
-    elif juju_info_network:
-        _NETWORKS["juju-info"][None] = juju_info_network
+        apply_harness_patch(juju_info_network or JUJU_INFO)
+    else:
+        assert _NETWORKS  # type guard
 
-    for binding, network in networks.items():
+        if juju_info_network:
+            _NETWORKS["juju-info"][None] = juju_info_network
+
+    for binding, network in networks.items() if networks else ():
         if isinstance(binding, str):
             name = binding
             bind_id = None

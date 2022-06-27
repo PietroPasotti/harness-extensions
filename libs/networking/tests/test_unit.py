@@ -13,10 +13,10 @@ sys.path.append(str(lib_root))
 
 from networking import (
     Network,
+    NetworkingError,
     add_network,
     apply_harness_patch,
     networking,
-    NetworkingError,
     remove_network,
     retract_harness_patch,
 )
