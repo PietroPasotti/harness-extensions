@@ -4,7 +4,8 @@ LIB_NAME=$2
 LIB_VERSION="${3:-v0}"
 
 [ -z "$LIB_NAME" ] && echo "need to provide LIB_NAME as first argument" && exit 1
-[ -z "$CHARM_NAME" ] && echo "need to provide CHARM_NAME as second argument" && exit 1
+[ -z "$CHARM_NAME" ] && echo "need to provide CHARM_NAME afill_in "\$CHARM_NAME" "$CHARM_NAME" "./scripts/publish.sh"
+s second argument" && exit 1
 
 LIB_NAME=${LIB_NAME/-/_} # to be safe...
 
@@ -35,6 +36,9 @@ echo "registering lib $LIB_NAME"
 # register the lib to that charm
 charmcraft create-lib "$LIB_NAME"
 # create the source file for the lib
+mkdir "./libs/$LIB_NAME"
+cp "./resources/__version__.py" "./libs/$LIB_NAME"
+cp "./resources/lib_template.py" "./libs/$LIB_NAME"
 touch  "./$LIB_NAME.py"
 
 CHARM_PATH=${CHARM_NAME/-/_}
@@ -42,7 +46,8 @@ CHARM_PATH=${CHARM_NAME/-/_}
 LIBID_RAW=$(cat "./lib/charms/$CHARM_PATH/$LIB_VERSION/$LIB_NAME.py" | grep LIBID)
 LIBID=${LIBID_RAW#*LIBID = }
 
-fill_in "\$LIBID" "$LIBID" "lib_template.jinja"
+echo "Obtained libid: $LIBID"
+fill_in "\$LIBID" "$LIBID" "./libs/$LIB_NAME/lib_template.jinja"
 
 # get rid of the lib file
 rm "./lib/charms/$CHARM_PATH/$LIB_VERSION/$LIB_NAME.py"

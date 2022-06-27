@@ -1,0 +1,23 @@
+'''This is a library providing a utility for adding networking mocking
+capability to Harness.
+
+Example usage:
+
+>>> from charms.harness_extensions.v0.capture_events import capture
+>>> with capture(RelationEvent) as captured:
+>>>     harness.add_relation('foo', 'remote')
+>>> assert captured.event.unit.name == 'remote'
+'''
+
+# The unique Charmhub library identifier, never change it
+LIBID = "aeb24262a5db4716925bf012ceae211c"
+
+# Increment this major API version when introducing breaking changes
+LIBAPI = {{ version }}
+
+# Increment this PATCH version before using `charmcraft publish-lib` or reset
+# to 0 if you are raising the major API version
+LIBPATCH = {{ revision }}
+
+{{ py }}
+

@@ -1,5 +1,5 @@
 name: harness-extensions  # $ TEMPLATE: Filled in by ./scripts/init.sh
 description: |  
-  Library charm for: capture_events
+  Library charm for harness extensions.
 summary: |
-  Library charm for: capture_events
+  Library charm for harness extensions.

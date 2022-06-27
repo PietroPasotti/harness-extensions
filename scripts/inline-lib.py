@@ -6,17 +6,23 @@ from pathlib import Path
 
 import jinja2 as jinja2
 
-sys.path.append(str(Path()))
-
-import __version__
-
 root = Path()
 
 
-def inline_lib():
-    print("Rendering capture_events lib...")
-    py = root / "capture_events.py"
-    template = root / "lib_template.jinja"
+def inline_lib(lib: str):
+    print(f"Rendering {lib} lib...")
+
+    lib_root = Path() / 'libs' / lib
+    sys.path.append(str(lib_root))
+
+    try:
+        import __version__  # noqa
+    except ModuleNotFoundError:
+        raise ValueError(lib)
+
+    lib_py_file = lib + ".py"
+    py = lib_root / (lib_py_file)
+    template = lib_root / "lib_template.jinja"
 
     assert py.exists()
     assert template.exists()
@@ -25,9 +31,9 @@ def inline_lib():
         root
         / "lib"
         / "charms"
-        / "harness_extensions"  # $ TEMPLATE: Filled in by ./scripts/init.sh
+        / "harness_extensions"
         / f"v{__version__.version}"
-        / "capture_events.py"  # $ TEMPLATE: Filled in by ./scripts/init.sh
+        / lib_py_file
     )
 
     if not lib_file.parent.exists():
@@ -45,4 +51,7 @@ def inline_lib():
 
 
 if __name__ == "__main__":
-    inline_lib()
+    import typer
+
+    typer.run(inline_lib)
+
