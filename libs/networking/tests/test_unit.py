@@ -90,6 +90,67 @@ def test_multiple_bindings():
         assert c.model.get_binding(foo).network.bind_address == IPv4Address(
             "42.42.42.42"
         )
+        assert c.model.get_binding("foo").network.bind_address == IPv4Address(
+            "42.42.42.42"
+        )
+
+
+def test_multiple_bindings_defaults():
+    class Charm(CharmBase):
+        pass
+
+    h: Harness[Charm] = Harness(Charm)
+    h.begin()
+    c = h.charm
+    foo1 = Relation(
+        relation_name="foo",
+        relation_id=42,
+        is_peer=False,
+        our_unit=c.unit,
+        backend=h._backend,
+        cache=h.model._cache,
+    )
+
+    foo2 = Relation(
+        relation_name="foo",
+        relation_id=43,
+        is_peer=False,
+        our_unit=c.unit,
+        backend=h._backend,
+        cache=h.model._cache,
+    )
+
+    with networking(
+        networks={
+            foo1: Network(private_address="42.42.42.42"),
+            foo2: Network(private_address="43.43.43.43"),
+        }
+    ):
+        assert c.model.get_binding("juju-info").network.bind_address == IPv4Address(
+            "1.1.1.1"
+        )
+        assert c.model.get_binding(foo1).network.bind_address == IPv4Address(
+            "42.42.42.42"
+        )
+        # default is foo1's binding
+        assert c.model.get_binding("foo").network.bind_address == IPv4Address(
+            "42.42.42.42"
+        )
+        # I can get foo2's binding by specifying the id
+        assert c.model.get_binding(foo2).network.bind_address == IPv4Address(
+            "43.43.43.43"
+        )
+
+        # if I pop foo1, I'm left with foo2 as default binding
+        remove_network("foo", foo1.id)
+        del c.model._bindings._data["foo"]  # clear model cache
+
+        assert c.model.get_binding("foo").network.bind_address == IPv4Address(
+            "43.43.43.43"
+        )
+        assert c.model.get_binding(foo2).network.bind_address == IPv4Address(
+            "43.43.43.43"
+        )
 
 
 def test_default_binding():

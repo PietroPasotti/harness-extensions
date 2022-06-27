@@ -107,12 +107,25 @@ def add_network(endpoint_name: str, relation_id: Optional[int], network: _Networ
             f"to a network for relation id {relation_id}."
             f"Overwriting..."
         )
+
+    # make it default as well
+    if None not in _NETWORKS[endpoint_name]:
+        _NETWORKS[endpoint_name][None] = network
+
     _NETWORKS[endpoint_name][relation_id] = network
 
 
 def remove_network(endpoint_name: str, relation_id: int):
     """Remove a network from the harness."""
-    del _NETWORKS[endpoint_name][relation_id]
+    network = _NETWORKS[endpoint_name].pop(relation_id)
+    if network is _NETWORKS[endpoint_name][None]:
+        del _NETWORKS[endpoint_name][None]
+
+        # elect new default  # todo check behaviour
+        if _NETWORKS[endpoint_name]:
+            next_id = next(iter(_NETWORKS[endpoint_name]))
+            _NETWORKS[endpoint_name][None] = _NETWORKS[endpoint_name][next_id]
+
     if not _NETWORKS[endpoint_name]:
         del _NETWORKS[endpoint_name]
 
@@ -196,8 +209,7 @@ def networking(
             bind_id = binding.id
         else:
             raise TypeError(binding)
-
-        _NETWORKS[name][bind_id] = network
+        add_network(name, bind_id, network)
 
     yield
 
