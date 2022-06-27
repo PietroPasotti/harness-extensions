@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import pytest as pytest
+import yaml
 from ops.charm import (
     CharmBase,
     ConfigChangedEvent,
@@ -24,7 +25,11 @@ def harness():
     class Charm(CharmBase):
         pass
 
-    return Harness(Charm)
+    return Harness(Charm,
+                   meta=yaml.safe_dump({"requires": {"foo": {"interface": "foo"}}}),
+                   config=yaml.safe_dump(
+        {'options': {'foo': {'type': 'string'}}}
+    ))
 
 
 @pytest.fixture
@@ -40,6 +45,5 @@ def test_capture(charm, harness):
 
     assert isinstance(captured[0], ConfigChangedEvent)
     assert isinstance(captured[1], RelationCreatedEvent)
-    assert isinstance(captured[1], RelationJoinedEvent)
 
-    assert len(captured) == 3
+    assert len(captured) == 2
