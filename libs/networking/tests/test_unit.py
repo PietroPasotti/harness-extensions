@@ -116,7 +116,6 @@ def test_dynamic_add_remove():
     h: Harness[Charm] = Harness(Charm)
     h.begin()
     c = h.charm
-    h.add_relation(h.model.get_relation())
 
     with networking():
         with pytest.raises(RuntimeError):
