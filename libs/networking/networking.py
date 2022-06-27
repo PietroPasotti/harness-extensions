@@ -10,6 +10,11 @@ from ops.model import Relation
 
 log = logging.getLogger("networking")
 
+
+class NetworkingError(RuntimeError):
+    """Base class for errors raised from this module."""
+
+
 JUJU_INFO = {
     "bind-addresses": [
         {
@@ -49,7 +54,7 @@ def apply_harness_patch(juju_info_network: "_Network" = JUJU_INFO):
     """Patches harness.backend.network_get and initializes the juju-info binding."""
     global PATCH_ACTIVE, _NETWORKS
     if PATCH_ACTIVE:
-        raise RuntimeError("patch already active")
+        raise NetworkingError("patch already active")
 
     from ops.testing import _TestingModelBackend
 
@@ -79,27 +84,32 @@ def _network_get(_, endpoint_name, relation_id=None) -> _Network:
 
     try:
         endpoints = _NETWORKS[endpoint_name]
-        if not endpoints:
-            raise KeyError(endpoint_name)
         network = endpoints.get(relation_id)
         if not network:
-            # fall back to 'default' binding for relation:
+            # fall back to default binding for relation:
             return endpoints[None]
         return network
     except KeyError as e:
-        raise RuntimeError(
-            f"No network for {endpoint_name} -r ({relation_id}); "
-            f"try `add_network({endpoint_name}, {relation_id}, Network(...))`"
+        raise NetworkingError(
+            f"No network for {endpoint_name} -r {relation_id}; "
+            f"try `add_network({endpoint_name}, {relation_id} | None, Network(...))`"
         ) from e
 
 
-def add_network(endpoint_name: str, relation_id: Optional[int], network: _Network):
+def add_network(
+    endpoint_name: str,
+    relation_id: Optional[int],
+    network: _Network,
+    make_default=False,
+):
     """Add a network to the harness.
 
     - `endpoint_name`: the relation name this network belongs to
     - `relation_id`: ID of the relation this network belongs to. If None, this will
-        become the default network for the relation.
+        be the default network for the relation.
     - `network`: network data.
+    - `make_default`: Make this the default network for the endpoint.
+       Equivalent to calling this again with `relation_id==None`.
     """
     if _NETWORKS[endpoint_name].get(relation_id):
         log.warning(
@@ -108,24 +118,16 @@ def add_network(endpoint_name: str, relation_id: Optional[int], network: _Networ
             f"Overwriting..."
         )
 
-    # make it default as well
-    if None not in _NETWORKS[endpoint_name]:
-        _NETWORKS[endpoint_name][None] = network
-
     _NETWORKS[endpoint_name][relation_id] = network
 
+    if relation_id and make_default:
+        # make it default as well
+        _NETWORKS[endpoint_name][None] = network
 
-def remove_network(endpoint_name: str, relation_id: int):
+
+def remove_network(endpoint_name: str, relation_id: Optional[int]):
     """Remove a network from the harness."""
-    network = _NETWORKS[endpoint_name].pop(relation_id)
-    if network is _NETWORKS[endpoint_name][None]:
-        del _NETWORKS[endpoint_name][None]
-
-        # elect new default  # todo check behaviour
-        if _NETWORKS[endpoint_name]:
-            next_id = next(iter(_NETWORKS[endpoint_name]))
-            _NETWORKS[endpoint_name][None] = _NETWORKS[endpoint_name][next_id]
-
+    _NETWORKS[endpoint_name].pop(relation_id)
     if not _NETWORKS[endpoint_name]:
         del _NETWORKS[endpoint_name]
 
@@ -164,8 +166,15 @@ _not_given = object()  # None is meaningful, but JUJU_INFO is mutable
 def networking(
     juju_info_network: Optional[_Network] = _not_given,
     networks: Optional[Dict[Union[str, Relation], _Network]] = None,
+    make_default: bool = False,
 ):
     """Context manager to activate/deactivate networking within a scope.
+
+    Arguments:
+        - `juju_info_network`: network assigned to the implicit 'juju-info' endpoint.
+        - `networks`: mapping from endpoints (names, or relations) to networks.
+        - `make_default`: whether the networks passed as relations should also
+          be interpreted as default networks for the endpoint.
 
     Example usage:
     >>> with networking():
@@ -175,7 +184,8 @@ def networking(
     >>> bar_relation = harness.model.get_relation('bar', 2)
     >>> with networking(networks={
     ...         foo_relation: Network(private_address='42.42.42.42')}
-    ...         'bar': Network(private_address='50.50.50.1')}
+    ...         'bar': Network(private_address='50.50.50.1')},
+    ...         make_default=True,
     ...         ):
     >>>     assert charm.model.get_binding(foo_relation).network.private_address
     >>>     assert charm.model.get_binding('foo').network.private_address
@@ -209,7 +219,7 @@ def networking(
             bind_id = binding.id
         else:
             raise TypeError(binding)
-        add_network(name, bind_id, network)
+        add_network(name, bind_id, network, make_default=make_default)
 
     yield
 

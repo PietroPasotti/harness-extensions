@@ -16,6 +16,7 @@ from networking import (
     add_network,
     apply_harness_patch,
     networking,
+    NetworkingError,
     remove_network,
     retract_harness_patch,
 )
@@ -34,7 +35,7 @@ def test_notimpl_default():
 
 def test_patch_twice():
     with networking():
-        with pytest.raises(RuntimeError):
+        with pytest.raises(NetworkingError):
             apply_harness_patch()
 
 
@@ -83,7 +84,9 @@ def test_multiple_bindings():
         cache=h.model._cache,
     )
 
-    with networking(networks={foo: Network(private_address="42.42.42.42")}):
+    with networking(
+        networks={foo: Network(private_address="42.42.42.42")}, make_default=True
+    ):
         assert c.model.get_binding("juju-info").network.bind_address == IPv4Address(
             "1.1.1.1"
         )
@@ -122,6 +125,7 @@ def test_multiple_bindings_defaults():
 
     with networking(
         networks={
+            "foo": Network(private_address="42.42.42.42"),
             foo1: Network(private_address="42.42.42.42"),
             foo2: Network(private_address="43.43.43.43"),
         }
@@ -141,16 +145,44 @@ def test_multiple_bindings_defaults():
             "43.43.43.43"
         )
 
-        # if I pop foo1, I'm left with foo2 as default binding
+        # if I pop foo1, I'm left with no foo1-specific binding
         remove_network("foo", foo1.id)
-        del c.model._bindings._data["foo"]  # clear model cache
+        del c.model._bindings._data[foo1]  # clear model cache
+        # but foo still has sa default binding
+        _ = c.model.get_binding("foo").network.bind_address
+        # so also for foo1 it will still work
+        _ = c.model.get_binding(foo1).network.bind_address
 
-        assert c.model.get_binding("foo").network.bind_address == IPv4Address(
-            "43.43.43.43"
-        )
+        # foo2 still has its specific override
         assert c.model.get_binding(foo2).network.bind_address == IPv4Address(
             "43.43.43.43"
         )
+
+        # now let's pop the default
+        remove_network("foo", None)
+        del c.model._bindings._data["foo"]  # clear model cache
+        del c.model._bindings._data[foo1]  # clear model cache
+        # both foo1 specific and 'foo' will now break:
+        with pytest.raises(NetworkingError):
+            _ = c.model.get_binding("foo").network.bind_address
+        with pytest.raises(NetworkingError):
+            _ = c.model.get_binding(foo1).network.bind_address
+
+        # foo2 still works
+        assert c.model.get_binding(foo2).network.bind_address == IPv4Address(
+            "43.43.43.43"
+        )
+        # now we pop it
+        remove_network("foo", foo2.id)
+        del c.model._bindings._data[foo2]  # clear model cache
+
+        # and now it's all gone
+        with pytest.raises(NetworkingError):
+            _ = c.model.get_binding(foo2).network.bind_address
+        with pytest.raises(NetworkingError):
+            _ = c.model.get_binding(foo1).network.bind_address
+        with pytest.raises(NetworkingError):
+            _ = c.model.get_binding("foo").network.bind_address
 
 
 def test_default_binding():
@@ -179,7 +211,7 @@ def test_dynamic_add_remove():
     c = h.charm
 
     with networking():
-        with pytest.raises(RuntimeError):
+        with pytest.raises(NetworkingError):
             _ = c.model.get_binding("foo").network
         add_network("foo", None, Network(private_address="42.42.42.42"))
 
@@ -189,5 +221,5 @@ def test_dynamic_add_remove():
         del c.model._bindings._data["foo"]
 
         remove_network("foo", None)
-        with pytest.raises(RuntimeError):
+        with pytest.raises(NetworkingError):
             _ = c.model.get_binding("foo").network
