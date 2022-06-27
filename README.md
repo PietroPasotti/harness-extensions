@@ -81,7 +81,7 @@ def test_many_events_emitted(harness: Harness):
 
 # How to update
 
-When you contribute to this repo, before your changes get merged to main (but when they are final already), you can run `scripts/update.sh`.
+When you contribute to this repo, before your changes get merged to main (but when they are final already), you can run `scripts/update.sh [lib name]`.
 This will 
  - Bump the revision
  - Inline the lib
