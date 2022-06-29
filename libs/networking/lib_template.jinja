@@ -16,6 +16,10 @@ Advanced use cases:
 >>>     # the custom foo endpoint is mocked:
 >>>     assert c.model.get_binding(foo).network.bind_address == IPv4Address("42.42.42.42")
 >>>     assert c.model.get_binding('foo').network.bind_address == IPv4Address("42.42.42.42")
+
+
+CAVEAT: The patch is global; that is, if you instantiate two Harnesses (don't do that),
+you won't be able to mock `network-get` calls on a per-harness basis.
 '''
 
 # The unique Charmhub library identifier, never change it

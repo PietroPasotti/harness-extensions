@@ -37,6 +37,8 @@ with networking(networks={foo: Network(private_address="42.42.42.42")}):
     assert c.model.get_binding('foo').network.bind_address == IPv4Address("42.42.42.42")
 ```
 
+CAVEAT: The patch is global; that is, if you instantiate two Harnesses (don't do that), 
+you won't be able to mock `network-get` calls on a per-harness basis.  
 
 ## capture_events
 
