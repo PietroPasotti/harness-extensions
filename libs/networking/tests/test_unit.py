@@ -15,10 +15,10 @@ from networking import (
     Network,
     NetworkingError,
     add_network,
-    apply_harness_patch,
+    activate,
     networking,
     remove_network,
-    retract_harness_patch,
+    deactivate,
 )
 
 
@@ -36,7 +36,7 @@ def test_notimpl_default():
 def test_patch_twice():
     with networking():
         with pytest.raises(NetworkingError):
-            apply_harness_patch()
+            activate()
 
 
 def test_default_juju_info_bind():
@@ -54,7 +54,7 @@ def test_default_juju_info_bind():
 
 
 def test_add_relation_binding():
-    apply_harness_patch()
+    activate()
 
     class Charm(CharmBase):
         pass
@@ -65,7 +65,7 @@ def test_add_relation_binding():
     assert c.model.get_binding("juju-info").network.bind_address == IPv4Address(
         "1.1.1.1"
     )
-    retract_harness_patch()
+    deactivate()
 
 
 def test_multiple_bindings():

@@ -1,4 +1,4 @@
-name: harness-extensions  # $ TEMPLATE: Filled in by ./scripts/init.sh
+name: harness-extensions
 description: |  
   Library charm for harness extensions.
 summary: |

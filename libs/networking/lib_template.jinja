@@ -1,10 +1,21 @@
 '''This is a library providing a utility for adding networking mocking
 capability to Harness.
 
-Example usage:
+Basic usage:
 
->>> from charms.harness_extensions.v0.networking import apply_harness_patch
->>> apply_harness_patch()
+>>> from charms.harness_extensions.v0 import networking
+>>> networking.activate()
+
+Advanced use cases:
+
+# let's pretend 'foo' is a relation:
+>>> foo = charm.model.get_relation('foo', 1)
+>>> with networking(networks={foo: Network(private_address="42.42.42.42")}):
+>>>     # the juju-info network is present by default unless you pass None
+>>>     assert c.model.get_binding("juju-info").network.bind_address == IPv4Address("1.1.1.1")
+>>>     # the custom foo endpoint is mocked:
+>>>     assert c.model.get_binding(foo).network.bind_address == IPv4Address("42.42.42.42")
+>>>     assert c.model.get_binding('foo').network.bind_address == IPv4Address("42.42.42.42")
 '''
 
 # The unique Charmhub library identifier, never change it

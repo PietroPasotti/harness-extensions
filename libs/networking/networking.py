@@ -50,7 +50,7 @@ _Network = TypedDict(
 )
 
 
-def apply_harness_patch(juju_info_network: "_Network" = JUJU_INFO):
+def activate(juju_info_network: "_Network" = JUJU_INFO):
     """Patches harness.backend.network_get and initializes the juju-info binding."""
     global PATCH_ACTIVE, _NETWORKS
     if PATCH_ACTIVE:
@@ -66,7 +66,7 @@ def apply_harness_patch(juju_info_network: "_Network" = JUJU_INFO):
     PATCH_ACTIVE = True
 
 
-def retract_harness_patch():
+def deactivate():
     """Undoes the patch."""
     global PATCH_ACTIVE, _NETWORKS
     assert PATCH_ACTIVE, "patch not active"
@@ -114,9 +114,7 @@ def add_network(
        Equivalent to calling this again with `relation_id==None`.
     """
     if not PATCH_ACTIVE:
-        raise NetworkingError(
-            "module not initialized; " "run apply_harness_patch() first."
-        )
+        raise NetworkingError("module not initialized; " "run activate() first.")
     assert _NETWORKS  # type guard
 
     if _NETWORKS[endpoint_name].get(relation_id):
@@ -136,9 +134,7 @@ def add_network(
 def remove_network(endpoint_name: str, relation_id: Optional[int]):
     """Remove a network from the harness."""
     if not PATCH_ACTIVE:
-        raise NetworkingError(
-            "module not initialized; " "run apply_harness_patch() first."
-        )
+        raise NetworkingError("module not initialized; " "run activate() first.")
     assert _NETWORKS  # type guard
 
     _NETWORKS[endpoint_name].pop(relation_id)
@@ -219,7 +215,7 @@ def networking(
 
     if not PATCH_ACTIVE:
         patch_was_inactive = True
-        apply_harness_patch(juju_info_network or JUJU_INFO)
+        activate(juju_info_network or JUJU_INFO)
     else:
         assert _NETWORKS  # type guard
 
@@ -241,4 +237,4 @@ def networking(
 
     _NETWORKS = old
     if patch_was_inactive:
-        retract_harness_patch()
+        deactivate()

@@ -21,8 +21,8 @@ Good when:
 
 Basic usage:
 ```python
-from charms.harness_extensions.v0.networking import apply_harness_patch
-apply_harness_patch()
+from charms.harness_extensions.v0 import networking
+networking.activate()
 ```
 
 Advanced use cases:
