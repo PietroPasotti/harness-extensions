@@ -4,7 +4,6 @@ if [ $? -eq 0 ]; then
   PYTHONPATH=$PYTHONPATH:./ ./scripts/bump-version.py "$1"
   PYTHONPATH=$PYTHONPATH:./ ./scripts/inline-lib.py "$1"
   ./scripts/publish.sh $1
-  echo "FOO"
 else
     echo "TESTS FAILED! aborting..."
 fi

@@ -14,11 +14,11 @@ sys.path.append(str(lib_root))
 from networking import (
     Network,
     NetworkingError,
-    add_network,
     activate,
+    add_network,
+    deactivate,
     networking,
     remove_network,
-    deactivate,
 )
 
 

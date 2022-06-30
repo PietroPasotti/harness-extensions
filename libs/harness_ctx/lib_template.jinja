@@ -1,0 +1,35 @@
+'''This is a library providing a sample implementation for more realistic Harness-event interactions.
+First and foremost, it generates a single-use Harness that gets discarded after each event execution, thereby forcing a charm init at each event.
+Secondly, it emits framework.commit() events after each hook, which Harness doesn't (yet).
+This lib will likely become redundant once https://github.com/canonical/operator/issues/736 is solved; until then, this allows us to experiment with the concept.
+
+Basic usage:
+
+>>> class MyCharm(CharmBase):
+>>>     def __init__(self, framework: Framework, key: typing.Optional = None):
+>>>         super().__init__(framework, key)
+>>>         self.framework.observe(self.on.update_status, self._listen)
+>>>         self.framework.observe(self.framework.on.commit, self._listen)
+>>>
+>>>     def _listen(self, e):
+>>>         self.event = e
+>>>
+>>> with HarnessCtx(MyCharm, "update-status") as h:
+>>>     event = h.emit()
+>>>     assert event.handle.kind == "update_status"
+>>>
+>>> assert h.harness.charm.event.handle.kind == "commit"
+'''
+
+# The unique Charmhub library identifier, never change it
+LIBID = "b4a3a09b7c33401c98d8cdbcbdacaea6"
+
+# Increment this major API version when introducing breaking changes
+LIBAPI = {{ version }}
+
+# Increment this PATCH version before using `charmcraft publish-lib` or reset
+# to 0 if you are raising the major API version
+LIBPATCH = {{ revision }}
+
+{{ py }}
+
