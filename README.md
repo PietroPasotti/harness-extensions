@@ -5,6 +5,7 @@ At the moment it contains two extension libraries:
 
 - networking
 - capture_events
+- harness_ctx
 
 ## networking
 
