@@ -81,6 +81,41 @@ def test_many_events_emitted(harness: Harness):
     assert isinstance(config, ConfigChangedEvent)
 ```
 
+
+## harness_ctx
+
+This is a library providing a utility for testing with Harness in a slightly stricter way.
+Good when: 
+ - your charm has state-dependent `__init__` logic that is malfunctioning because Harness does not reinitialize the charm
+ - your charm (or dependencies) hook onto `framework.on.commit`, which Harness does not fire
+ - you want a closer match between production charm behaviour and unittesting charm behaviour
+
+This lib will likely become redundant once https://github.com/canonical/operator/issues/736 is solved; until then, this allows us to experiment with the concept.
+
+### How to get
+
+`charmcraft fetch-lib charms.harness_extensions.v0.harness_ctx`
+
+### How to use
+
+```python
+class MyCharm(CharmBase):
+    def __init__(self, framework: Framework, key: typing.Optional = None):
+        super().__init__(framework, key)
+        self.framework.observe(self.on.update_status, self._listen)
+        self.framework.observe(self.framework.on.commit, self._listen)
+
+    def _listen(self, e):
+        self.event = e
+
+with HarnessCtx(MyCharm, "update-status") as h:
+    event = h.emit()  # this will be called automatically on context exit if you didn't call it manually
+    assert event.handle.kind == "update_status"
+
+assert h.harness.charm.event.handle.kind == "commit"
+```
+
+
 # How to update
 
 When you contribute to this repo, before your changes get merged to main (but when they are final already), you can run `scripts/update.sh [lib name]`.
