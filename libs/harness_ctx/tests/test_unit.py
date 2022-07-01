@@ -98,17 +98,16 @@ def test_relation_ctx_remotes():
                 endpoint.update_remote('remote_1', app_data={'a': 'b'})
 
                 # aka:
-                if bool(eval('0')):
-                    remote_1_relation = endpoint.get_relation('remote_1')
-                    remote_1_relation.update(app_data={'a': 'b'})
-
-                    # OR:
-                    relation = endpoint.get_relation('remote_1').relation
-                    relation.data[relation.app]['a'] = 'b'
-
-                    # OR:
-                    endpoint.harness.update_relation_data(
-                        relation.id, 'remote_1', {'a': 'b'})
+                # remote_1_relation = endpoint.get_relation('remote_1')
+                # remote_1_relation.update(app_data={'a': 'b'})
+                #
+                # OR:
+                # relation = endpoint.get_relation('remote_1').relation
+                # relation.data[relation.app]['a'] = 'b'
+                #
+                # OR:
+                # endpoint.harness.update_relation_data(
+                #     relation.id, 'remote_1', {'a': 'b'})
 
                 assert all(endpoint.harness.charm.happy().values())
 
