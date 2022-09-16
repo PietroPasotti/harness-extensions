@@ -1,0 +1,35 @@
+'''This is a library providing a utility for unittesting code that's meant to be used in charms.
+
+So not charm code per se, but e.g. library code, extensions, etc...
+
+Basic usage:
+
+>>> from charms.harness_extensions.v0.charm_tester import harness_factory
+>>> def test_lib():
+>>>     harness = harness_factory()
+>>>     harness.begin()
+>>>     charm = harness.charm
+
+>>>     @charm.run
+>>>     def _initialize(self):
+>>>         self.lib = CharmLib(self)
+
+>>>     @charm.listener('my-lib-event')
+>>>     def _on_my_lib_event(self, event):
+>>>         assert event.foo == 'bar'
+>>>
+>>>     harness.do_things_to_trigger_lib_event()
+'''
+
+# The unique Charmhub library identifier, never change it
+LIBID = "f5956a2b6dfa451ca7e7376ebc82c0bd"
+
+# Increment this major API version when introducing breaking changes
+LIBAPI = {{ version }}
+
+# Increment this PATCH version before using `charmcraft publish-lib` or reset
+# to 0 if you are raising the major API version
+LIBPATCH = {{ revision }}
+
+{{ py }}
+
