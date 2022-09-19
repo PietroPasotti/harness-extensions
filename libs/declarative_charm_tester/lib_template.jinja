@@ -14,7 +14,7 @@ Basic usage:
 >>>     def _initialize(self):
 >>>         self.lib = CharmLib(self)
 >>>
->>>     @charm.listener('my-lib-event')
+>>>     @charm.listener(charm.on.my_lib_event)
 >>>     def _on_my_lib_event(self, event):
 >>>         assert event.foo == 'bar'
 >>>

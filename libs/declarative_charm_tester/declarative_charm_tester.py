@@ -1,5 +1,5 @@
 import typing
-from abc import ABC
+from functools import partial
 
 from ops.charm import CharmBase
 from ops.framework import BoundEvent, EventBase
@@ -8,12 +8,13 @@ from ops.testing import Harness
 OptionalYAML = typing.Optional[typing.Union[str, typing.TextIO]]
 
 
-class _TestCharmABC(ABC, CharmBase):
+class _TestCharmABC(CharmBase):
     def get_calls(self, clear: bool = False) -> typing.List[typing.Any]: ...
 
-    def run(self, fn: typing.Callable[[CharmBase], ...]) -> None: ...
+    def run(self, fn: typing.Callable[[CharmBase], typing.Any]) -> None: ...
 
-    def listener(self, event: str) -> None: ...
+    def listener(self, event: str) -> typing.Callable[
+        [typing.Callable[[CharmBase], EventBase]], None]: ...
 
     def register_listener(self, event: BoundEvent,
                           callback: typing.Callable[[CharmBase, BoundEvent], None]): ...
@@ -39,12 +40,12 @@ def charm_type_factory() -> typing.Type[CharmBase]:
                 self._listener_calls = []
             return calls
 
-        def run(self, fn: typing.Callable[[typing.Self], ...]):
+        def run(self, fn: typing.Callable[[CharmBase], typing.Any]):
             if self._callback:
                 raise RuntimeError('already in a run scope')
 
-            self._callback = fn
-            self._invoke(self)
+            self._callback = partial(fn, self)
+            self._invoke()
             self._callback = None
 
         def _invoke(self, *args):
@@ -69,7 +70,7 @@ def charm_type_factory() -> typing.Type[CharmBase]:
             listener = self._listeners[evt.handle.kind]
             self._listener_calls.append(listener)
             listener.called = evt
-            listener(evt)
+            listener(self, evt)
 
     return TestCharm
 
