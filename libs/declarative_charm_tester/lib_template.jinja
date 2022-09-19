@@ -9,20 +9,22 @@ Basic usage:
 >>>     harness = harness_factory()
 >>>     harness.begin()
 >>>     charm = harness.charm
-
+>>>
 >>>     @charm.run
 >>>     def _initialize(self):
 >>>         self.lib = CharmLib(self)
-
+>>>
 >>>     @charm.listener('my-lib-event')
 >>>     def _on_my_lib_event(self, event):
 >>>         assert event.foo == 'bar'
 >>>
+>>>     assert not _on_my_lib_event.called
 >>>     harness.do_things_to_trigger_lib_event()
+>>>     assert isinstance(_on_my_lib_event.called, MyExpectedEventType)
 '''
 
 # The unique Charmhub library identifier, never change it
-LIBID = "f5956a2b6dfa451ca7e7376ebc82c0bd"
+LIBID = "9634087a8856453db6308a63f61ca8df"
 
 # Increment this major API version when introducing breaking changes
 LIBAPI = {{ version }}
