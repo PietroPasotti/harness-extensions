@@ -298,14 +298,19 @@ def _harness_data_to_relationdata(data: Dict[str, Dict[str, str]],
     def _clean(data: Dict[str, str]):
         if include_default_juju_keys:
             return data
-        return _purge(data)
+        cdata = data.copy()
+        _purge(cdata)
+        return cdata
+
+    def _get_units_data(source):
+        return {int(p_name.split('/')[1]): _clean(data[p_name]) for p_name in data if p_name.startswith(source) and '/' in p_name}
 
     provider_data = AppRelationData(
         app_name=provider,
         meta=None,
         endpoint=prov_endpoint,
         application_data=_clean(data[provider]),
-        units_data={p_name: _clean(data[p_name]) for p_name in data if p_name.startswith(provider)},
+        units_data=_get_units_data(provider),
         relation_id=r_id)
 
     requirer_data = AppRelationData(
@@ -313,7 +318,7 @@ def _harness_data_to_relationdata(data: Dict[str, Dict[str, str]],
         meta=None,
         endpoint=req_endpoint,
         application_data=_clean(data[requirer]),
-        units_data={p_name: _clean(data[p_name]) for p_name in data if p_name.startswith(provider)},
+        units_data=_get_units_data(requirer),
         relation_id=r_id)
 
     return RelationData(provider=provider_data,
