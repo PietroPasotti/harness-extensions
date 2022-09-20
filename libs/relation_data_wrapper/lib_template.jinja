@@ -1,0 +1,23 @@
+'''This is a library providing a utility for integration testing relation databag contents.
+
+Basic usage:
+
+>>> from charms.harness_extensions.v0.relation_data_wrapper import get_relation_data
+>>> def test_relation_data():
+>>>     data = get_relation_data(requirer='app1:endpoint1', provider='app2:endpoint2')
+>>>     assert data.provider.application_data == {'foo': 'bar'}
+>>>     assert data.provider.units_data[0] == {'baz': 'qux'}
+'''
+
+# The unique Charmhub library identifier, never change it
+LIBID = "0250fc57562c48d5aa15582995dbb936"
+
+# Increment this major API version when introducing breaking changes
+LIBAPI = {{ version }}
+
+# Increment this PATCH version before using `charmcraft publish-lib` or reset
+# to 0 if you are raising the major API version
+LIBPATCH = {{ revision }}
+
+{{ py }}
+
