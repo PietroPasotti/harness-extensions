@@ -517,7 +517,9 @@ class _Builtins:
     def __init__(self):
         self.STARTUP_LEADER = Scenario.from_events(
             (
+                ATTACH_ALL_STORAGES,
                 'start',
+                CREATE_ALL_RELATIONS,
                 'leader-elected',
                 'config-changed',
                 'install',
@@ -527,11 +529,11 @@ class _Builtins:
         self.STARTUP_FOLLOWER = Scenario.from_events(
             (
                 ATTACH_ALL_STORAGES,
-                'install',
+                'start',
                 CREATE_ALL_RELATIONS,
                 'leader-settings-changed',
                 'config-changed',
-                'start',
+                'install',
             )
         )
 
