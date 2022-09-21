@@ -348,6 +348,23 @@ class HarnessCtx:
             'config': _to_yaml(config)
         }
 
+    @staticmethod
+    def _inject(harness: Harness, obj):
+        if isinstance(obj, InjectRelation):
+            return harness.model.get_relation(
+                relation_name=obj.relation_meta.endpoint,
+                relation_id=obj.relation_meta.relation_id
+            )
+
+        return obj
+
+    def _process_event_args(self, harness):
+        return map(partial(self._inject, harness), self.event_args)
+
+    def _process_event_kwargs(self, harness):
+        kwargs = self.event_kwargs
+        return kwargs
+
     def __enter__(self):
         self._harness = harness = Harness(self.charm_cls, **self.harness_kwargs)
         harness.begin()
@@ -360,13 +377,15 @@ class HarnessCtx:
             # we don't call event_source.emit()
             # because we want to grab the event
             framework = event_source.emitter.framework
-            key = framework._next_event_key()
+            key = framework._next_event_key()  # noqa
             handle = Handle(event_source.emitter, event_source.event_kind, key)
-            event = event_source.event_type(
-                handle, *self.event_args, **self.event_kwargs
-            )
+
+            event_args = self._process_event_args(harness)
+            event_kwargs = self._process_event_kwargs(harness)
+
+            event = event_source.event_type(handle, *event_args, **event_kwargs)
             event.framework = framework
-            framework._emit(event)  # type: ignore
+            framework._emit(event)  # type: ignore  # noqa
             return typing.cast(BoundEvent, event)
 
         self._emitter = bound_ctx = Emitter(harness, _emit)
@@ -380,14 +399,14 @@ class HarnessCtx:
 
 # from show-relation!
 @dataclass
-class Metadata:
+class RelationMeta:
     endpoint: str
     interface: str
     app_name: str
     relation_id: int
 
     scale: int = 1
-    units: Tuple[int, ...] = (0, )
+    units: Tuple[int, ...] = (0,)
     leader_id: int = 0
 
     @classmethod
@@ -397,17 +416,18 @@ class Metadata:
 
 @dataclass
 class AppRelationData:
-    meta: Metadata
+    meta: RelationMeta
     application_data: dict = dataclasses.field(default_factory=dict)
     units_data: Dict[int, dict] = dataclasses.field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, obj):
-        meta = Metadata.from_dict(obj.pop('meta'))
+        meta = RelationMeta.from_dict(obj.pop('meta'))
         return cls(meta=meta, **obj)
 
     def copy(self):
         return dataclasses.replace()
+
 
 # ACTUAL LIBRARY CODE. Dependencies above.
 
@@ -591,6 +611,19 @@ class _UnboundScenario:
                         config=config)
 
 
+@dataclass
+class Inject:
+    """Base class for injectors: special placeholders used to tell harness_ctx
+    to inject instances that can't be retrieved in advance in event args or kwargs.
+    """
+    pass
+
+
+@dataclass
+class InjectRelation(Inject):
+    relation_meta: RelationMeta
+
+
 class Scenario:
     if typing.TYPE_CHECKING:
         builtins: _Builtins
@@ -645,15 +678,15 @@ class Scenario:
         deactivate()
         self._entered = False
         if exc_info:
-            exc_type, exc, tb = exc_info
-            raise exc
-        return self
+            return False
+        return True
 
-    def _setup_context(self, harness: Harness, context: Context):
-        be: ops.testing._TestingModelBackend = harness._backend
+    @staticmethod
+    def _setup_context(harness: Harness, context: Context):
+        harness.disable_hooks()
+        be: ops.testing._TestingModelBackend = harness._backend  # noqa
 
         # relation data
-        # FIXME: the harness will fire relation events!
         for relation in context.relations:
             remote_app_name = relation.meta.app_name
             r_id = harness.add_relation(relation.meta.endpoint, remote_app_name)
@@ -683,8 +716,10 @@ class Scenario:
                         relation_id=network.bind_id,
                         network=network.network,
                         make_default=network.is_default)
+        harness.enable_hooks()
 
-    def _cleanup_context(self, harness: Harness, context: Context):
+    @staticmethod
+    def _cleanup_context(harness: Harness, context: Context):
         # Harness will be reinitialized, so nothing to clean up there;
         # however:
         for network in context.networks:
@@ -708,15 +743,19 @@ class Scenario:
         elif event.name == CREATE_ALL_RELATIONS:
             if context:
                 for relation in context.relations:
-                    evt = Event(f"{relation.endpoint}-relation-created")
+                    # RELATION_OBJ is to indicate to the harness_ctx that
+                    # it should retrieve the
+                    evt = Event(f"{relation.meta.endpoint}-relation-created",
+                                args=(InjectRelation(relation.meta),))
                     events.append(evt)
 
         elif event.name == BREAK_ALL_RELATIONS:
             if context:
                 for relation in context.relations:
-                    evt = Event(f"{relation.endpoint}-relation-broken")
+                    evt = Event(f"{relation.meta.endpoint}-relation-broken",
+                                args=(InjectRelation(relation.meta),))
                     events.append(evt)
-                    # todo should ensure there's no relation data in this context?
+                    # todo should we ensure there's no relation data in this context?
 
         else:
             raise RuntimeError(f'unknown meta-event {event.name}')

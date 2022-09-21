@@ -4,6 +4,7 @@ This is a "real" scenario.
 import sys
 import typing
 from pathlib import Path
+from unittest.mock import Mock
 
 from ops.charm import CharmBase
 from ops.framework import Framework
@@ -65,11 +66,11 @@ def _test_context_stepping():
         seq.play('container-pebble-ready', add_to_playbook=True)
         seq.play('upgrade', add_to_playbook=True)
 
+    # and at the end you could serialize it to file for later use:
+    # seq.playbook.dump()
+
 
 def test_playbook_serialization():
-    # you can serialize the scenario you built (and write it to file)
-    scenario = Scenario.builtins.STARTUP_LEADER.playbook.dump()
-
     events_ran = []
 
     class MyCharm(CharmBase):
@@ -81,8 +82,8 @@ def test_playbook_serialization():
         def _record(self, e):
             events_ran.append(e)
 
-    # now you can write your test code like so:
-    scenario = Scenario(MyCharm, playbook=Playbook.load(scenario))
+    srl_scenario = Scenario.builtins.STARTUP_LEADER.playbook.dump()
+    scenario = Scenario(MyCharm, playbook=Playbook.load(srl_scenario))
     scenario.play_until_complete()
 
     assert len(events_ran) == 4
@@ -100,6 +101,11 @@ def test_complex_scenario():
         def _record(self, e):
             events_ran.append(e)
 
+    relation_mock = Mock(id=1)
+    relation_mock.name = 'remote-db'
+
+    relation_meta = RelationMeta(app_name='remote', relation_id=2, endpoint='remote-db', scale=1,
+                        units=(0,), leader_id=0, interface='db')
     my_scenario = Scenario.from_scenes(
         [Scene(
             context=Context(
@@ -109,16 +115,10 @@ def test_complex_scenario():
                 relations=(AppRelationData(
                     application_data={'foo': 'bar'},
                     units_data={0: {'baz': {'qux'}}},
-                    meta=Metadata(
-                        app_name='remote',
-                        relation_id=2,
-                        endpoint='remote-db',
-                        scale=1,
-                        units=(0,),
-                        leader_id=0,
-                        interface='db')),),
+                    meta=relation_meta),),
                 leader=True),
-            event=Event('remote-db-relation-changed')),
+            event=Event('remote-db-relation-changed',
+                        args=(InjectRelation(relation_meta),))),
         ]
     )
 
@@ -126,4 +126,4 @@ def test_complex_scenario():
                 meta={'requires': {'remote-db': {'interface': 'db'}}}
                 ).play_until_complete()
 
-    assert len(events_ran) == 5  # FIXME: should be 1!
+    assert len(events_ran) == 1
