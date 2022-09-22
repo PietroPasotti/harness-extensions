@@ -2,6 +2,7 @@ import dataclasses
 import json
 from dataclasses import dataclass
 from functools import partial
+from uuid import uuid4
 from typing import Tuple, Any, Dict, Union, Iterable
 
 import ops
@@ -16,12 +17,14 @@ import logging
 from collections import defaultdict
 from contextlib import contextmanager
 from copy import deepcopy
-from typing import Dict, List, Optional, TypedDict, Union, TextIO
+from typing import Dict, List, Optional, TypedDict, Union, TextIO, Sequence, Callable
 
 from ops.model import Relation
 
 network_logger = logging.getLogger("networking")
 CharmMeta = Optional[Union[str, TextIO, dict]]
+PlayResult = Tuple['BoundEvent', 'Context', 'Emitter']
+AssertionType = Callable[['BoundEvent', 'Context', 'Emitter'], Optional[bool]]
 
 
 class NetworkingError(RuntimeError):
@@ -259,7 +262,7 @@ import typing
 from typing import Callable, Protocol, Type
 
 from ops.charm import CharmBase, CharmEvents
-from ops.framework import BoundEvent, Handle
+from ops.framework import BoundEvent, Handle, EventBase
 from ops.testing import Harness
 
 
@@ -352,8 +355,8 @@ class HarnessCtx:
     def _inject(harness: Harness, obj):
         if isinstance(obj, InjectRelation):
             return harness.model.get_relation(
-                relation_name=obj.relation_meta.endpoint,
-                relation_id=obj.relation_meta.relation_id
+                relation_name=obj.relation_name,
+                relation_id=obj.relation_id
             )
 
         return obj
@@ -398,15 +401,27 @@ class HarnessCtx:
 
 
 # from show-relation!
+
 @dataclass
-class RelationMeta:
+class DCBase:
+    def replace(self, *args, **kwargs):
+        return dataclasses.replace(self, *args, **kwargs)
+
+
+@dataclass
+class RelationMeta(DCBase):
     endpoint: str
     interface: str
-    app_name: str
+    remote_app_name: str
     relation_id: int
 
+    # local limit
+    limit: int = 1
+
+    remote_unit_ids: Tuple[int, ...] = (0,)
+    # scale of the remote application; number of units, leader ID?
+    # TODO figure out if this is relevant
     scale: int = 1
-    units: Tuple[int, ...] = (0,)
     leader_id: int = 0
 
     @classmethod
@@ -415,7 +430,7 @@ class RelationMeta:
 
 
 @dataclass
-class AppRelationData:
+class RelationSpec(DCBase):
     meta: RelationMeta
     application_data: dict = dataclasses.field(default_factory=dict)
     units_data: Dict[int, dict] = dataclasses.field(default_factory=dict)
@@ -446,7 +461,16 @@ META_EVENTS = {
 
 
 @dataclass
-class Event:
+class CharmSpec:
+    """Charm spec."""
+    charm_type: CharmType
+    meta: Optional[CharmMeta] = None,
+    actions: Optional[CharmMeta] = None,
+    config: Optional[CharmMeta] = None
+
+
+@dataclass
+class _Event(DCBase):
     name: str
     args: Tuple[Any] = ()
     kwargs: Dict[str, Any] = dataclasses.field(default_factory=dict)
@@ -459,9 +483,44 @@ class Event:
     def from_dict(cls, obj):
         return cls(**obj)
 
+    def as_scenario(self, context: 'Context'):
+        """Utility to get to a single-event Scenario from a single event instance."""
+        return Scenario.from_scenes(Scene(context=context, event=self))
+
+    def play(self, context: 'Context',
+             charm_spec: CharmSpec,
+             assertions: Sequence[AssertionType] = (),
+             ) -> PlayResult:
+        """Utility to play this as a single scene."""
+        return self.as_scenario(
+            context
+        ).bind(
+            charm_spec=charm_spec,
+        ).play_until_complete(
+            assertions=assertions)
+
+def _derive_args(event_name: str):
+    args = []
+    terms = {'-relation-changed', '-relation-broken',
+             '-relation-joined', '-relation-departed',
+             '-relation-created'}
+
+    for term in terms:
+        # fixme: we can't disambiguate between relation IDs.
+        if event_name.endswith(term):
+            args.append(InjectRelation(relation_name=event_name[:-len(term)]))
+
+    return tuple(args)
+
+
+def Event(name: str, append_args:Tuple[Any] =(), **kwargs) -> _Event:
+    """This routine will attempt to generate event args for you, based on the event name."""
+    return _Event(name=name, args=_derive_args(name)+append_args, kwargs=kwargs)
+
+
 
 @dataclass
-class NetworkSpec:
+class NetworkSpec(DCBase):
     name: str
     bind_id: int
     network: _Network
@@ -473,30 +532,56 @@ class NetworkSpec:
 
 
 @dataclass
-class Context:
+class Model(DCBase):
+    name: str = 'foo'
+    uuid: str = str(uuid4())
+
+
+@dataclass
+class Context(DCBase):
     config: Dict[str, Union[str, int, float, bool]] = None
-    relations: Tuple[AppRelationData] = ()
+    relations: Tuple[RelationSpec] = ()
     networks: Tuple[NetworkSpec] = ()
     leader: bool = False
+    model: Model = Model()
 
     # todo: add pebble stuff, unit/app status, etc...
+    #  containers
+    #  status
+    #  actions?
+    #  juju topology
 
     @classmethod
     def from_dict(cls, obj):
         return cls(
             config=obj['config'],
-            relations=tuple(AppRelationData.from_dict(raw_ard) for raw_ard in obj['relations']),
+            relations=tuple(RelationSpec.from_dict(raw_ard) for raw_ard in obj['relations']),
             networks=tuple(NetworkSpec.from_dict(raw_ns) for raw_ns in obj['networks']),
             leader=obj['leader']
         )
+
+    def as_scenario(self, event: _Event):
+        """Utility to get to a single-event Scenario from a single context instance."""
+        return Scenario.from_scenes(Scene(context=self, event=event))
+
+    def play(self, event: _Event,
+             charm_spec: CharmSpec,
+             assertions: Sequence[AssertionType] = ()) -> PlayResult:
+        """Utility to play this as a single scene."""
+        return self.as_scenario(
+            event
+        ).bind(
+            charm_spec=charm_spec,
+        ).play_until_complete(
+            assertions=assertions)
 
 
 null_context = Context()
 
 
 @dataclass
-class Scene:
-    event: Event
+class Scene(DCBase):
+    event: _Event
     context: Context = None
     name: str = ""
 
@@ -507,7 +592,7 @@ class Scene:
     def from_dict(cls, obj):
         evt = obj['event']
         return cls(
-            event=Event(evt) if isinstance(evt, str) else Event.from_dict(evt),
+            event=_Event(evt) if isinstance(evt, str) else _Event.from_dict(evt),
             context=Context.from_dict(obj['context']) if obj['context'] is not None else None,
             name=obj['name'],
         )
@@ -548,9 +633,12 @@ class _Builtins:
 
 
 class Playbook:
-    def __init__(self, scenes: Tuple[Scene, ...]):
+    def __init__(self, scenes: Iterable[Scene]):
         self._scenes = list(scenes)
         self._cursor = 0
+
+    def __bool__(self):
+        return bool(self._scenes)
 
     @property
     def is_done(self):
@@ -602,15 +690,11 @@ class _UnboundScenario:
     def playbook(self):
         return self._playbook
 
-    def __call__(self, charm_type: CharmType,
-                 meta: Optional[CharmMeta] = None,
-                 actions: Optional[CharmMeta] = None,
-                 config: Optional[CharmMeta] = None):
-        return Scenario(charm_type=charm_type,
-                        playbook=self.playbook,
-                        meta=meta,
-                        actions=actions,
-                        config=config)
+    def __call__(self, charm_spec: CharmSpec):
+        return Scenario(charm_spec=charm_spec,
+                        playbook=self.playbook)
+
+    bind = __call__  # alias
 
 
 @dataclass
@@ -623,23 +707,18 @@ class Inject:
 
 @dataclass
 class InjectRelation(Inject):
-    relation_meta: RelationMeta
+    relation_name: str
+    relation_id: Optional[int] = None
 
 
 class Scenario:
     if typing.TYPE_CHECKING:
         builtins: _Builtins
 
-    def __init__(self, charm_type: CharmType,
-                 playbook: Playbook = Playbook(()),
-                 meta: Optional[CharmMeta] = None,
-                 actions: Optional[CharmMeta] = None,
-                 config: Optional[CharmMeta] = None):
+    def __init__(self, charm_spec: CharmSpec,
+                 playbook: Playbook = Playbook(())):
         self._playbook = playbook
-        self._charm_type = charm_type
-        self._meta = meta
-        self._actions = actions
-        self._config = config
+        self._charm_spec = charm_spec
 
     @staticmethod
     def from_scenes(
@@ -653,13 +732,13 @@ class Scenario:
 
     @staticmethod
     def from_events(
-            events: typing.Sequence[Union[str, Event]]
-    ) -> Callable[[CharmType], 'Scenario']:
+            events: typing.Sequence[Union[str, _Event]]
+    ) -> _UnboundScenario:
 
         def _to_event(obj):
             if isinstance(obj, str):
-                return Event(obj)
-            elif isinstance(obj, Event):
+                return _Event(obj)
+            elif isinstance(obj, _Event):
                 return obj
             else:
                 raise TypeError(obj)
@@ -690,7 +769,7 @@ class Scenario:
 
         # relation data
         for relation in context.relations:
-            remote_app_name = relation.meta.app_name
+            remote_app_name = relation.meta.remote_app_name
             r_id = harness.add_relation(relation.meta.endpoint, remote_app_name)
             if remote_app_name != harness.charm.app.name:
                 if relation.application_data:
@@ -712,6 +791,10 @@ class Scenario:
         # leadership:
         harness.set_leader(context.leader)
 
+        # juju topology:
+        harness.set_model_info(name=context.model.name,
+                               uuid=context.model.uuid)
+
         # networking
         for network in context.networks:
             add_network(endpoint_name=network.name,
@@ -728,7 +811,7 @@ class Scenario:
             remove_network(endpoint_name=network.name,
                            relation_id=network.bind_id)
 
-    def _play_meta(self, event: Event,
+    def _play_meta(self, event: _Event,
                    context: Context = None,
                    add_to_playbook: bool = False):
         # decompose the meta event
@@ -747,15 +830,17 @@ class Scenario:
                 for relation in context.relations:
                     # RELATION_OBJ is to indicate to the harness_ctx that
                     # it should retrieve the
-                    evt = Event(f"{relation.meta.endpoint}-relation-created",
-                                args=(InjectRelation(relation.meta),))
+                    evt = _Event(f"{relation.meta.endpoint}-relation-created",
+                                args=(InjectRelation(relation.meta.endpoint,
+                                                     relation.meta.relation_id),))
                     events.append(evt)
 
         elif event.name == BREAK_ALL_RELATIONS:
             if context:
                 for relation in context.relations:
-                    evt = Event(f"{relation.meta.endpoint}-relation-broken",
-                                args=(InjectRelation(relation.meta),))
+                    evt = _Event(f"{relation.meta.endpoint}-relation-broken",
+                                args=(InjectRelation(relation.meta.endpoint,
+                                                     relation.meta.relation_id),))
                     events.append(evt)
                     # todo should we ensure there's no relation data in this context?
 
@@ -763,47 +848,77 @@ class Scenario:
             raise RuntimeError(f'unknown meta-event {event.name}')
 
         logger.debug(f"decomposed meta {event.name} into {events}")
+        last = None
         for event in events:
-            self.play(event, context, add_to_playbook=add_to_playbook)
+            last = self.play(event, context, add_to_playbook=add_to_playbook)
+        return last
 
-    def play(self, evt: Union[Event, str],
+    def play(self, evt: Union[_Event, str],
              context: Context = None,
-             add_to_playbook: bool = False):
+             add_to_playbook: bool = False) -> PlayResult:
         if not self._entered:
             raise RuntimeError("Scenario.play() should be only called "
                                "within the Scenario's context.")
-        event = Event(evt) if isinstance(evt, str) else evt
+        event = _Event(evt) if isinstance(evt, str) else evt
 
         if event.is_meta:
             return self._play_meta(event, context,
                                    add_to_playbook=add_to_playbook)
 
-        with HarnessCtx(self._charm_type,
+        charm_spec = self._charm_spec
+        with HarnessCtx(charm_spec.charm_type,
                         event_name=event.name,
                         event_args=event.args,
                         event_kwargs=event.kwargs,
-                        meta=self._meta,
-                        actions=self._actions,
-                        config=self._config) as ctx:
+                        meta=charm_spec.meta,
+                        actions=charm_spec.actions,
+                        config=charm_spec.config) as ctx:
             if context:
                 self._setup_context(ctx.harness, context)
-            evt = ctx.emit()
+
+            ops_evt_obj: BoundEvent = ctx.emit()
+
+            # todo verify that if state was mutated, it was mutated
+            #  in a way that makes sense:
+            #  e.g. - charm cannot modify leadership status, etc...
             if context:
                 self._cleanup_context(ctx.harness, context)
 
         if add_to_playbook:
             # so we can later export it
             self._playbook.add(Scene(context=context, event=event))
-        return evt
+
+        # TODO: gather new context or Delta, return that.
+        return ops_evt_obj, context, ctx
 
     def play_next(self):
         next_scene: Scene = self._playbook.next()
         self.play(*next_scene)
 
-    def play_until_complete(self):
+    def play_until_complete(self,
+                            assertions: Union[AssertionType,
+                                              Iterable[AssertionType]] = ()):
+        if not self._playbook:
+            raise RuntimeError('playbook is empty')
+
         with self:
             for context, event in self._playbook:
-                self.play(evt=event, context=context)
+                ctx = self.play(evt=event, context=context)
+                if assertions:
+                    self._check_assertions(ctx, assertions)
+        return ctx
+
+    @staticmethod
+    def _check_assertions(ctx: PlayResult,
+                          assertions: Union[AssertionType,
+                                            Iterable[AssertionType]]):
+        if callable(assertions):
+            assertions = [assertions]
+
+        for assertion in assertions:
+            ret_val = assertion(*ctx)
+            if ret_val is False:
+                raise ValueError(f"Assertion {assertion} returned False")
 
 
 Scenario.builtins = _Builtins()

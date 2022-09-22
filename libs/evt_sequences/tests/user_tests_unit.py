@@ -2,11 +2,9 @@
 This is a "real" scenario.
 """
 import sys
-import typing
 from pathlib import Path
 from unittest.mock import Mock
 
-from ops.charm import CharmBase
 from ops.framework import Framework
 
 lib_root = Path(__file__).parent.parent
@@ -61,8 +59,12 @@ def _test_context_stepping():
 
     # alternatively you can declare a scenario as you go, e.g. in REPL:
     with Scenario(MyCharm) as seq:
-        seq.play('update-status', add_to_playbook=True)
-        seq.play('leader-settings-changed', add_to_playbook=True)
+        ctx = Context(leader=True)
+        from dataclasses import replace
+        seq.play('update-status', context=ctx, add_to_playbook=True)
+        seq.play('leader-settings-changed',
+                 context=replace(ctx, leader=False),
+                 add_to_playbook=True)
         seq.play('container-pebble-ready', add_to_playbook=True)
         seq.play('upgrade', add_to_playbook=True)
 
