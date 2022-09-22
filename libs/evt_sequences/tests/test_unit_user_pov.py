@@ -106,26 +106,25 @@ def test_complex_scenario():
     relation_mock = Mock(id=1)
     relation_mock.name = 'remote-db'
 
-    relation_meta = RelationMeta(app_name='remote', relation_id=2, endpoint='remote-db', scale=1,
-                        units=(0,), leader_id=0, interface='db')
+    relation_meta = RelationMeta(remote_app_name='remote', relation_id=2, endpoint='remote-db',
+                                 remote_unit_ids=(0,), interface='db')
     my_scenario = Scenario.from_scenes(
         [Scene(
             context=Context(
                 networks=(NetworkSpec(
                     name='endpoint', bind_id=2,
                     network=Network(private_address='0.0.0.2')),),
-                relations=(AppRelationData(
+                relations=(RelationSpec(
                     application_data={'foo': 'bar'},
                     units_data={0: {'baz': {'qux'}}},
                     meta=relation_meta),),
                 leader=True),
-            event=Event('remote-db-relation-changed',
-                        args=(InjectRelation(relation_meta),))),
+            event=Event('remote-db-relation-changed')),
         ]
     )
 
-    my_scenario(MyCharm,
-                meta={'requires': {'remote-db': {'interface': 'db'}}}
-                ).play_until_complete()
+    my_scenario(
+        CharmSpec(MyCharm, meta={'requires': {'remote-db': {'interface': 'db'}}}),
+    ).play_until_complete()
 
     assert len(events_ran) == 1

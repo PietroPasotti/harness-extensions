@@ -330,13 +330,15 @@ class HarnessCtx:
             actions: Optional[CharmMeta] = None,
             config: Optional[CharmMeta] = None,
             event_args: Tuple[Any, ...] = (),
-            event_kwargs: Dict[str, Any] = None
+            event_kwargs: Dict[str, Any] = None,
+            pre_begin_hook: Optional[Callable[[Harness], None]] = None
     ):
         self.charm_cls = charm
         self.emitter = emitter
         self.event_name = event_name.replace("-", "_")
         self.event_args = event_args
         self.event_kwargs = event_kwargs or {}
+        self.pre_begin_hook = pre_begin_hook
 
         def _to_yaml(obj):
             if isinstance(obj, str):
@@ -369,7 +371,12 @@ class HarnessCtx:
         return kwargs
 
     def __enter__(self):
-        self._harness = harness = Harness(self.charm_cls, **self.harness_kwargs)
+        self._harness = harness = Harness(self.charm_cls,
+                                          **self.harness_kwargs)
+        if self.pre_begin_hook:
+            logger.debug('running harness pre-begin hook')
+            self.pre_begin_hook(harness)
+
         harness.begin()
 
         emitter = self.emitter(harness.charm, harness)
@@ -464,9 +471,18 @@ META_EVENTS = {
 class CharmSpec:
     """Charm spec."""
     charm_type: CharmType
-    meta: Optional[CharmMeta] = None,
-    actions: Optional[CharmMeta] = None,
+    meta: Optional[CharmMeta] = None
+    actions: Optional[CharmMeta] = None
     config: Optional[CharmMeta] = None
+
+    @staticmethod
+    def cast(obj: Union['CharmSpec', CharmType, Type[CharmBase]]):
+        if isinstance(obj, type) and issubclass(obj, CharmBase):
+            return CharmSpec(charm_type=obj)
+        elif isinstance(obj, CharmSpec):
+            return obj
+        else:
+            raise ValueError(f'cannot convert {obj} to CharmSpec')
 
 
 @dataclass
@@ -499,6 +515,7 @@ class _Event(DCBase):
         ).play_until_complete(
             assertions=assertions)
 
+
 def _derive_args(event_name: str):
     args = []
     terms = {'-relation-changed', '-relation-broken',
@@ -513,10 +530,9 @@ def _derive_args(event_name: str):
     return tuple(args)
 
 
-def Event(name: str, append_args:Tuple[Any] =(), **kwargs) -> _Event:
+def Event(name: str, append_args: Tuple[Any] = (), **kwargs) -> _Event:
     """This routine will attempt to generate event args for you, based on the event name."""
-    return _Event(name=name, args=_derive_args(name)+append_args, kwargs=kwargs)
-
+    return _Event(name=name, args=_derive_args(name) + append_args, kwargs=kwargs)
 
 
 @dataclass
@@ -690,8 +706,8 @@ class _UnboundScenario:
     def playbook(self):
         return self._playbook
 
-    def __call__(self, charm_spec: CharmSpec):
-        return Scenario(charm_spec=charm_spec,
+    def __call__(self, charm_spec: Union[CharmSpec, CharmType]):
+        return Scenario(charm_spec=CharmSpec.cast(charm_spec),
                         playbook=self.playbook)
 
     bind = __call__  # alias
@@ -717,8 +733,9 @@ class Scenario:
 
     def __init__(self, charm_spec: CharmSpec,
                  playbook: Playbook = Playbook(())):
+
         self._playbook = playbook
-        self._charm_spec = charm_spec
+        self._charm_spec = CharmSpec.cast(charm_spec)
 
     @staticmethod
     def from_scenes(
@@ -763,6 +780,14 @@ class Scenario:
         return True
 
     @staticmethod
+    def _pre_setup_context(harness: Harness, context: Context):
+        # Harness initialization that needs to be done pre-begin()
+
+        # juju topology:
+        harness.set_model_info(name=context.model.name,
+                               uuid=context.model.uuid)
+
+    @staticmethod
     def _setup_context(harness: Harness, context: Context):
         harness.disable_hooks()
         be: ops.testing._TestingModelBackend = harness._backend  # noqa
@@ -790,10 +815,6 @@ class Scenario:
                                                  relation.units_data[0])
         # leadership:
         harness.set_leader(context.leader)
-
-        # juju topology:
-        harness.set_model_info(name=context.model.name,
-                               uuid=context.model.uuid)
 
         # networking
         for network in context.networks:
@@ -831,16 +852,16 @@ class Scenario:
                     # RELATION_OBJ is to indicate to the harness_ctx that
                     # it should retrieve the
                     evt = _Event(f"{relation.meta.endpoint}-relation-created",
-                                args=(InjectRelation(relation.meta.endpoint,
-                                                     relation.meta.relation_id),))
+                                 args=(InjectRelation(relation.meta.endpoint,
+                                                      relation.meta.relation_id),))
                     events.append(evt)
 
         elif event.name == BREAK_ALL_RELATIONS:
             if context:
                 for relation in context.relations:
                     evt = _Event(f"{relation.meta.endpoint}-relation-broken",
-                                args=(InjectRelation(relation.meta.endpoint,
-                                                     relation.meta.relation_id),))
+                                 args=(InjectRelation(relation.meta.endpoint,
+                                                      relation.meta.relation_id),))
                     events.append(evt)
                     # todo should we ensure there's no relation data in this context?
 
@@ -866,13 +887,20 @@ class Scenario:
                                    add_to_playbook=add_to_playbook)
 
         charm_spec = self._charm_spec
+
+        pre_begin_hook = None
+        if context:
+            # some context needs to be set up before harness.begin() is called.
+            pre_begin_hook = partial(self._pre_setup_context, context=context)
+
         with HarnessCtx(charm_spec.charm_type,
                         event_name=event.name,
                         event_args=event.args,
                         event_kwargs=event.kwargs,
                         meta=charm_spec.meta,
                         actions=charm_spec.actions,
-                        config=charm_spec.config) as ctx:
+                        config=charm_spec.config,
+                        pre_begin_hook=pre_begin_hook) as ctx:
             if context:
                 self._setup_context(ctx.harness, context)
 
