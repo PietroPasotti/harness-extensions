@@ -6,11 +6,14 @@ from pathlib import Path
 from unittest.mock import Mock
 
 from ops.framework import Framework
+from ops.charm import CharmBase
+import typing
+from evt_sequences import (
+    Scenario, Playbook, RelationMeta, RelationSpec, Context, NetworkSpec, Network, Scene, Event,
+    CharmSpec)
 
 lib_root = Path(__file__).parent.parent
 sys.path.append(str(lib_root))
-
-from evt_sequences import *
 
 
 def test_scenario_api():
@@ -27,11 +30,11 @@ def test_scenario_api():
 
     # play a builtin scenario
     # this is the new begin_with_initial_hooks()
-    Scenario.builtins.STARTUP_LEADER(MyCharm).play_until_complete()
-    Scenario.builtins.STARTUP_FOLLOWER(MyCharm).play_until_complete()
+    Scenario.builtins.startup()(MyCharm).play_until_complete()
+    Scenario.builtins.startup(leader=False)(MyCharm).play_until_complete()
 
     # this is like a simulate_teardown_sequence()
-    Scenario.builtins.TEARDOWN(MyCharm).play_until_complete()
+    Scenario.builtins.teardown()(MyCharm).play_until_complete()
 
     assert len(events_ran) == 10
 
@@ -84,7 +87,7 @@ def test_playbook_serialization():
         def _record(self, e):
             events_ran.append(e)
 
-    srl_scenario = Scenario.builtins.STARTUP_LEADER.playbook.dump()
+    srl_scenario = Scenario.builtins.startup().playbook.dump()
     scenario = Scenario(MyCharm, playbook=Playbook.load(srl_scenario))
     scenario.play_until_complete()
 
@@ -116,7 +119,7 @@ def test_complex_scenario():
                     network=Network(private_address='0.0.0.2')),),
                 relations=(RelationSpec(
                     application_data={'foo': 'bar'},
-                    units_data={0: {'baz': {'qux'}}},
+                    units_data={0: {'baz': 'qux'}},
                     meta=relation_meta),),
                 leader=True),
             event=Event('remote-db-relation-changed')),

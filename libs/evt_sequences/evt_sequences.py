@@ -615,30 +615,22 @@ class Scene(DCBase):
 
 
 class _Builtins:
-    def __init__(self):
-        self.STARTUP_LEADER = Scenario.from_events(
+    @staticmethod
+    def startup(leader=True):
+        return Scenario.from_events(
             (
                 ATTACH_ALL_STORAGES,
                 'start',
                 CREATE_ALL_RELATIONS,
-                'leader-elected',
+                'leader-elected' if leader else 'leader-settings-changed',
                 'config-changed',
                 'install',
             )
         )
 
-        self.STARTUP_FOLLOWER = Scenario.from_events(
-            (
-                ATTACH_ALL_STORAGES,
-                'start',
-                CREATE_ALL_RELATIONS,
-                'leader-settings-changed',
-                'config-changed',
-                'install',
-            )
-        )
-
-        self.TEARDOWN = Scenario.from_events(
+    @staticmethod
+    def teardown():
+        return Scenario.from_events(
             (
                 BREAK_ALL_RELATIONS,
                 DETACH_ALL_STORAGES,
@@ -728,8 +720,7 @@ class InjectRelation(Inject):
 
 
 class Scenario:
-    if typing.TYPE_CHECKING:
-        builtins: _Builtins
+    builtins = _Builtins()
 
     def __init__(self, charm_spec: CharmSpec,
                  playbook: Playbook = Playbook(())):
@@ -947,6 +938,3 @@ class Scenario:
             ret_val = assertion(*ctx)
             if ret_val is False:
                 raise ValueError(f"Assertion {assertion} returned False")
-
-
-Scenario.builtins = _Builtins()
