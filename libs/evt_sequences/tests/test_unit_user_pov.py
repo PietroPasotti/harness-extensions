@@ -10,7 +10,7 @@ from ops.charm import CharmBase
 import typing
 from evt_sequences import (
     Scenario, Playbook, RelationMeta, RelationSpec, Context, NetworkSpec, Network, Scene, Event,
-    CharmSpec)
+    CharmSpec, ContainerSpec)
 
 lib_root = Path(__file__).parent.parent
 sys.path.append(str(lib_root))
@@ -98,10 +98,14 @@ def test_complex_scenario():
     events_ran = []
 
     class MyCharm(CharmBase):
+        check_container_can_connect = True
+
         def __init__(self, framework: Framework, key: typing.Optional = None):
             super().__init__(framework, key)
             for evt in self.on.events().values():
                 self.framework.observe(evt, self._record)
+
+            assert self.unit.get_container('foo').can_connect() == self.check_container_can_connect
 
         def _record(self, e):
             events_ran.append(e)
@@ -111,9 +115,11 @@ def test_complex_scenario():
 
     relation_meta = RelationMeta(remote_app_name='remote', relation_id=2, endpoint='remote-db',
                                  remote_unit_ids=(0,), interface='db')
-    my_scenario = Scenario.from_scenes(
-        [Scene(
-            context=Context(
+
+    meta = {'requires': {'remote-db': {'interface': 'db'}},
+            'containers': {'foo': {}}}
+
+    initial_ctx = Context(
                 networks=(NetworkSpec(
                     name='endpoint', bind_id=2,
                     network=Network(private_address='0.0.0.2')),),
@@ -121,13 +127,27 @@ def test_complex_scenario():
                     application_data={'foo': 'bar'},
                     units_data={0: {'baz': 'qux'}},
                     meta=relation_meta),),
-                leader=True),
-            event=Event('remote-db-relation-changed')),
-        ]
-    )
+                leader=True,
+                containers=(
+                    ContainerSpec('foo', can_connect=True),
+                ))
 
-    my_scenario(
-        CharmSpec(MyCharm, meta={'requires': {'remote-db': {'interface': 'db'}}}),
-    ).play_until_complete()
+    MyCharm.check_container_can_connect = True
+    with Scenario(
+        CharmSpec(MyCharm, meta=meta),
+    ) as scenario:
+        scenario.play(
+            context=initial_ctx,
+            event=Event('remote-db-relation-changed'))
 
     assert len(events_ran) == 1
+
+    MyCharm.check_container_can_connect = False
+    with Scenario(
+        CharmSpec(MyCharm, meta=meta),
+    ) as scenario:
+        scenario.play(
+            context=initial_ctx.replace_container_connectivity('foo', False),
+            event=Event('remote-db-relation-changed'))
+
+    assert len(events_ran) == 2

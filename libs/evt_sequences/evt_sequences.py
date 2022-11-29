@@ -1,3 +1,16 @@
+'''This is a library providing a utility for unit testing event sequences with the harness.
+'''
+
+# The unique Charmhub library identifier, never change it
+LIBID = "884af95dbb1d4e8db20e0c29e6231ffe"
+
+# Increment this major API version when introducing breaking changes
+LIBAPI = 0
+
+# Increment this PATCH version before using `charmcraft publish-lib` or reset
+# to 0 if you are raising the major API version
+LIBPATCH = 1
+
 import dataclasses
 import json
 from dataclasses import dataclass
@@ -19,11 +32,10 @@ from contextlib import contextmanager
 from copy import deepcopy
 from typing import Dict, List, Optional, TypedDict, Union, TextIO, Sequence, Callable
 
-from ops.model import Relation
+from ops.model import Relation, StatusBase
 
 network_logger = logging.getLogger("networking")
 CharmMeta = Optional[Union[str, TextIO, dict]]
-PlayResult = Tuple['BoundEvent', 'Context', 'Emitter']
 AssertionType = Callable[['BoundEvent', 'Context', 'Emitter'], Optional[bool]]
 
 
@@ -296,8 +308,8 @@ class Emitter:
         Will get called automatically when HarnessCtx exits if you didn't call it already.
         """
         assert not self._emitted, "already emitted; should not emit twice"
-        self.event = self._emit()
         self._emitted = True
+        self.event = self._emit()
         return self.event
 
 
@@ -470,7 +482,7 @@ META_EVENTS = {
 @dataclass
 class CharmSpec:
     """Charm spec."""
-    charm_type: CharmType
+    charm_type: Type[CharmType]
     meta: Optional[CharmMeta] = None
     actions: Optional[CharmMeta] = None
     config: Optional[CharmMeta] = None
@@ -483,6 +495,19 @@ class CharmSpec:
             return obj
         else:
             raise ValueError(f'cannot convert {obj} to CharmSpec')
+
+
+class PlayResult:
+    # TODO: expose the 'final context' or a Delta object from the PlayResult.
+    def __init__(self, event: 'BoundEvent', context: 'Context', emitter: 'Emitter'):
+        self.event = event
+        self.context = context
+        self.emitter = emitter
+
+        # some useful attributes
+        self.harness = emitter.harness
+        self.charm = self.harness.charm
+        self.status = self.emitter.harness.charm.unit.status
 
 
 @dataclass
@@ -548,6 +573,17 @@ class NetworkSpec(DCBase):
 
 
 @dataclass
+class ContainerSpec(DCBase):
+    name: str
+    can_connect: bool = False
+    # todo mock filesystem and pebble proc?
+
+    @classmethod
+    def from_dict(cls, obj):
+        return cls(**obj)
+
+
+@dataclass
 class Model(DCBase):
     name: str = 'foo'
     uuid: str = str(uuid4())
@@ -558,6 +594,7 @@ class Context(DCBase):
     config: Dict[str, Union[str, int, float, bool]] = None
     relations: Tuple[RelationSpec] = ()
     networks: Tuple[NetworkSpec] = ()
+    containers: Tuple[ContainerSpec] = ()
     leader: bool = False
     model: Model = Model()
 
@@ -590,6 +627,15 @@ class Context(DCBase):
             charm_spec=charm_spec,
         ).play_until_complete(
             assertions=assertions)
+
+    # utilities to quickly mutate states "deep" inside the tree
+    def replace_container_connectivity(self, container_name: str, can_connect: bool):
+        def replacer(container: ContainerSpec):
+            if container.name == container_name:
+                return container.replace(can_connect=can_connect)
+            return container
+        ctrs = tuple(map(replacer, self.containers))
+        return self.replace(containers=ctrs)
 
 
 null_context = Context()
@@ -784,6 +830,10 @@ class Scenario:
         be: ops.testing._TestingModelBackend = harness._backend  # noqa
 
         # relation data
+        for container in context.containers:
+            harness.set_can_connect(container.name, container.can_connect)
+
+        # relation data
         for relation in context.relations:
             remote_app_name = relation.meta.remote_app_name
             r_id = harness.add_relation(relation.meta.endpoint, remote_app_name)
@@ -865,50 +915,49 @@ class Scenario:
             last = self.play(event, context, add_to_playbook=add_to_playbook)
         return last
 
-    def play(self, evt: Union[_Event, str],
+    def play(self, event: Union[_Event, str],
              context: Context = None,
              add_to_playbook: bool = False) -> PlayResult:
         if not self._entered:
             raise RuntimeError("Scenario.play() should be only called "
                                "within the Scenario's context.")
-        event = _Event(evt) if isinstance(evt, str) else evt
+        _event = _Event(event) if isinstance(event, str) else event
 
-        if event.is_meta:
-            return self._play_meta(event, context,
+        if _event.is_meta:
+            return self._play_meta(_event, context,
                                    add_to_playbook=add_to_playbook)
 
         charm_spec = self._charm_spec
-
         pre_begin_hook = None
+
         if context:
             # some context needs to be set up before harness.begin() is called.
             pre_begin_hook = partial(self._pre_setup_context, context=context)
 
         with HarnessCtx(charm_spec.charm_type,
-                        event_name=event.name,
-                        event_args=event.args,
-                        event_kwargs=event.kwargs,
+                        event_name=_event.name,
+                        event_args=_event.args,
+                        event_kwargs=_event.kwargs,
                         meta=charm_spec.meta,
                         actions=charm_spec.actions,
                         config=charm_spec.config,
-                        pre_begin_hook=pre_begin_hook) as ctx:
+                        pre_begin_hook=pre_begin_hook) as emitter:
             if context:
-                self._setup_context(ctx.harness, context)
+                self._setup_context(emitter.harness, context)
 
-            ops_evt_obj: BoundEvent = ctx.emit()
+            ops_evt_obj: BoundEvent = emitter.emit()
 
             # todo verify that if state was mutated, it was mutated
             #  in a way that makes sense:
             #  e.g. - charm cannot modify leadership status, etc...
             if context:
-                self._cleanup_context(ctx.harness, context)
+                self._cleanup_context(emitter.harness, context)
 
         if add_to_playbook:
             # so we can later export it
             self._playbook.add(Scene(context=context, event=event))
 
-        # TODO: gather new context or Delta, return that.
-        return ops_evt_obj, context, ctx
+        return PlayResult(event=ops_evt_obj, context=context, emitter=emitter)
 
     def play_next(self):
         next_scene: Scene = self._playbook.next()
@@ -922,7 +971,7 @@ class Scenario:
 
         with self:
             for context, event in self._playbook:
-                ctx = self.play(evt=event, context=context)
+                ctx = self.play(event=event, context=context)
                 if assertions:
                     self._check_assertions(ctx, assertions)
         return ctx
@@ -938,3 +987,4 @@ class Scenario:
             ret_val = assertion(*ctx)
             if ret_val is False:
                 raise ValueError(f"Assertion {assertion} returned False")
+
