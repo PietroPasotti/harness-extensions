@@ -78,7 +78,7 @@ class HarnessCtx:
     def __enter__(self):
         self._harness = harness = Harness(self.charm_cls)
         harness.begin()
-
+        assert harness.charm
         emitter = self.emitter(harness.charm, harness)
         events = getattr(emitter, "on")
         event_source: BoundEvent = getattr(events, self.event_name)
