@@ -1,16 +1,52 @@
-'''This is a library providing a utility for unittesting events fired on a
-Harness-ed Charm.
+'''This is a library providing a persistent filesystem-based cache to put in front of `charmcraft pack`.
+
+Especially useful for integration testing setups where you only want to repack charms only if there are changes
+to the code.
+This library provides a `spellbook_fetch` function that will:
+- copy the libs passed via pull_libs into the charm root (to ensure that they're up to date)
+- recursively put together a md5 hash for the charm tree
+- if that does not match any known hash: pack the charm with charmcraft, make a copy of the
+  resulting charm, tag it with the hash and store it for later (on the filesystem!
+  so it will persist between test runs).
+- if that matches a previously stored hash: return the stored charm.
+
+The cache is disabled by default. To enable it, set spellbook.USE_CACHE=True, or set the "SPELLBOOK"
+envvar to anything you like, or pass use_cache=True to spellbook_fetch. This allows you to control whether you want
+to err on the safe side in CIs and disable caching.
+
+It aims to be a replacement of pytest-operator's `OpsTest.build_charm`, at least for the cases
+where 'charmcraft pack' works out of the box. Older charm packages are not supported yet.
 
 Example usage:
 
->>> from charms.harness_extensions.v0.capture_events import capture
->>> with capture(RelationEvent) as captured:
->>>     harness.add_relation('foo', 'remote')
->>> assert captured.event.unit.name == 'remote'
+```
+@pytest_fixture
+def my_charm():
+    return spellbook_fetch('./', "my_charm", use_cache=True)
+```
+
+This fixture will result in a repack if and only if any file inside of `./src, ./lib` changes
+(to change that default, pass a different `hash_paths`).
+
+You can pass a `pull_libs` argument, with paths to some charm libs, and spellbook will copy those
+libs into the charm root tree before proceeding with the hashing and caching - so that if there are
+changes to the libs, they will be taken into account.
+
+```
+@pytest_fixture
+def my_tester_charm():
+    return spellbook_fetch('./tests/integration/testers/foo',
+    pull_libs=[
+        "./charms/libs/foo/v0/bar.py",
+        "./charms/libs/baz/v42/qux.py",
+    ],
+    "foo", use_cache=True)
+```
+
 '''
 
 # The unique Charmhub library identifier, never change it
-LIBID = "9fcdab70e26d4eee9797c0e542ab397a"
+LIBID = "ca5b3e8bf9cc4d558029d0d4850d17b6"
 
 # Increment this major API version when introducing breaking changes
 LIBAPI = {{ version }}

@@ -1,5 +1,6 @@
 # Copyright 2022 Canonical Ltd.
 # See LICENSE file for licensing details.
+
 import logging
 import os
 import shutil
@@ -11,17 +12,16 @@ from typing import List, Union
 
 import yaml
 
-charm_cache = Path(__file__).parent / "cache"
-charm_shelf = Path(__file__).parent / "shelf"
+CHARM_CACHE_DEFAULT_DIR = Path(__file__).parent / "cache"
+CHARM_SHELF_DEFAULT_DIR = Path(__file__).parent / "shelf"
 
-COPY_TAG = "unfrozen"  # tag for charm copies
-USE_CACHE = False  # you can flip this to true when testing
+COPY_TAG_DEFAULT = "unfrozen"  # tag for charm copies
+USE_CACHE = os.getenv('SPELLBOOK', False)
 
 if USE_CACHE:
     logging.warning(
-        "USE_CACHE:: charms will be packed once and stored in "
-        "./tests/integration/charms. Clear them manually if you "
-        "have made changes to the charm code."
+        f"Spellbook cache active by default: charms will be packed once and stored by "
+        f"default in {CHARM_CACHE_DEFAULT_DIR}. To disable, flip USE_CACHE to False."
     )
 
 
@@ -47,10 +47,11 @@ def spellbook_fetch(  # ignore: C901
     hash_paths: List[Path] = None,
     pull_libs: List[Path] = None,
     use_cache=USE_CACHE,
-    cache_dir=charm_cache,
-    shelf_dir=charm_shelf,
+    copy_tag=COPY_TAG_DEFAULT,
+    cache_dir=CHARM_CACHE_DEFAULT_DIR,
+    shelf_dir=CHARM_SHELF_DEFAULT_DIR,
 ):
-    """Cache for charmcraft pack.
+    """Persistent filesystem cache for charmcraft pack.
 
     Params::
         :param charm_root: Charm tree root. Default to the cwd.
@@ -60,6 +61,7 @@ def spellbook_fetch(  # ignore: C901
             Defaults to 'charm_root/'.
         :param pull_libs: Path to local charm lib files to include in the package.
         :param use_cache: Flag to disable caching entirely.
+        :param copy_tag: Tag to mark charm copies.
         :param cache_dir: Directory in which to store the cached charm files. Defaults to ./cache
         :param shelf_dir: Directory in which to store the copies of the cached charm files
             whose paths are returned by this function. Defaults to ./shelf
@@ -102,12 +104,12 @@ def spellbook_fetch(  # ignore: C901
     cached_charm_path = cache_dir / f"{charm_tag}.{charm_tree_sum}.charm"
 
     # in case someone deletes it after deploy, we make a copy and keep it in the shelf
-    shelved_charm_copy = (shelf_dir / f"{charm_tag}.{COPY_TAG}.charm").absolute()
+    shelved_charm_copy = (shelf_dir / f"{charm_tag}.{copy_tag}.charm").absolute()
 
     # clear any dirty cache
     dirty_cache_found = False
     for fname in cache_dir.glob(f"{charm_tag}.*"):
-        if fname.name.startswith(f"{charm_tag}.{COPY_TAG}."):
+        if fname.name.startswith(f"{charm_tag}.{copy_tag}."):
             continue
         if fname != cached_charm_path:
             dirty_cache_found = True
